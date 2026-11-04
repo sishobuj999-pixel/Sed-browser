@@ -13,67 +13,50 @@
             android:id="@+id/browserToolbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_margin="7dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingStart="9dp"
-            android:paddingEnd="9dp"
-            android:paddingTop="7dp"
-            android:paddingBottom="7dp"
-            android:background="@drawable/toolbar_glass"
-            android:elevation="8dp">
-
-            <ImageView
-                android:id="@+id/logo"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_marginEnd="7dp"
-                android:contentDescription="SED Browser logo"
-                android:src="@drawable/sed_logo" />
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:background="#BFFFFFFF">
 
             <Button
                 android:id="@+id/back"
-                android:layout_width="40dp"
-                android:layout_height="42dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:minWidth="0dp"
                 android:minHeight="0dp"
                 android:text="‹"
-                android:textSize="27sp"
-                android:textColor="#E6FFFFFF"
-                android:background="@drawable/control_glass"
-                android:stateListAnimator="@null"
-                android:elevation="0dp" />
+                android:textSize="28sp"
+                android:textColor="#202124"
+                android:backgroundTint="#55FFFFFF" />
 
             <EditText
                 android:id="@+id/address"
                 android:layout_width="0dp"
-                android:layout_height="42dp"
+                android:layout_height="44dp"
                 android:layout_weight="1"
-                android:layout_marginStart="7dp"
-                android:layout_marginEnd="7dp"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
                 android:singleLine="true"
-                android:paddingStart="13dp"
-                android:paddingEnd="13dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
                 android:hint="Search or enter address"
-                android:textColor="#E6FFFFFF"
-                android:textColorHint="#99FFFFFF"
+                android:textColor="#202124"
+                android:textColorHint="#667085"
                 android:background="@drawable/address_glass"
-                android:inputType="textUri"
-                android:includeFontPadding="false" />
+                android:inputType="textUri" />
 
             <Button
                 android:id="@+id/go"
-                android:layout_width="46dp"
-                android:layout_height="42dp"
+                android:layout_width="52dp"
+                android:layout_height="44dp"
                 android:minWidth="0dp"
                 android:minHeight="0dp"
                 android:text="Go"
-                android:textAllCaps="false"
-                android:textSize="13sp"
-                android:textColor="#E6FFFFFF"
-                android:background="@drawable/control_glass"
-                android:stateListAnimator="@null"
-                android:elevation="0dp" />
+                android:textColor="#202124"
+                android:backgroundTint="#55FFFFFF" />
         </LinearLayout>
 
         <WebView
