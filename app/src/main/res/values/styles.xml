@@ -1,3 +1,9 @@
 <resources>
-    <style name="Theme.SedBrowser" parent="android:style/Theme.Material.Light.NoActionBar" />
+    <style name="Theme.SedBrowser" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">#FF101014</item>
+        <item name="android:statusBarColor">#FF101014</item>
+        <item name="android:windowBackground">#FF101014</item>
+        <item name="android:colorAccent">#FF7CF7D4</item>
+    </style>
 </resources>
