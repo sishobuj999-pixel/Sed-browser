@@ -1,18 +1,69 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent">
-    <ImageView android:id="@+id/wallpaper" android:layout_width="match_parent"
-        android:layout_height="match_parent" android:scaleType="centerCrop" />
-    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
-        android:orientation="vertical">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="8dp">
-            <Button android:id="@+id/back" android:layout_width="48dp" android:layout_height="48dp" android:text="‹" />
-            <EditText android:id="@+id/address" android:layout_width="0dp" android:layout_height="48dp"
-                android:layout_weight="1" android:singleLine="true" android:hint="Search or enter address" />
-            <Button android:id="@+id/go" android:layout_width="56dp" android:layout_height="48dp" android:text="Go" />
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#00000000">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="#00000000">
+
+        <LinearLayout
+            android:id="@+id/browserToolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:background="#BFFFFFFF">
+
+            <Button
+                android:id="@+id/back"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:text="‹"
+                android:textSize="28sp"
+                android:textColor="#202124"
+                android:backgroundTint="#55FFFFFF" />
+
+            <EditText
+                android:id="@+id/address"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:singleLine="true"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:hint="Search or enter address"
+                android:textColor="#202124"
+                android:textColorHint="#667085"
+                android:background="@drawable/address_glass"
+                android:inputType="textUri" />
+
+            <Button
+                android:id="@+id/go"
+                android:layout_width="52dp"
+                android:layout_height="44dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:text="Go"
+                android:textColor="#202124"
+                android:backgroundTint="#55FFFFFF" />
         </LinearLayout>
-        <WebView android:id="@+id/web" android:layout_width="match_parent"
-            android:layout_height="0dp" android:layout_weight="1" />
-        <Button android:id="@+id/wallpaperButton" android:layout_width="match_parent"
-            android:layout_height="48dp" android:text="Set Home Wallpaper" />
+
+        <WebView
+            android:id="@+id/web"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="#00000000" />
     </LinearLayout>
 </FrameLayout>
