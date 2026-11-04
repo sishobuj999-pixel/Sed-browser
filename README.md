@@ -1,2 +1,0 @@
-# Sed-browser
-Personal browser
