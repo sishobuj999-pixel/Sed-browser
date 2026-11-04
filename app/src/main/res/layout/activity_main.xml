@@ -1,0 +1,18 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+    <ImageView android:id="@+id/wallpaper" android:layout_width="match_parent"
+        android:layout_height="match_parent" android:scaleType="centerCrop" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"
+        android:orientation="vertical">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="8dp">
+            <Button android:id="@+id/back" android:layout_width="48dp" android:layout_height="48dp" android:text="‹" />
+            <EditText android:id="@+id/address" android:layout_width="0dp" android:layout_height="48dp"
+                android:layout_weight="1" android:singleLine="true" android:hint="Search or enter address" />
+            <Button android:id="@+id/go" android:layout_width="56dp" android:layout_height="48dp" android:text="Go" />
+        </LinearLayout>
+        <WebView android:id="@+id/web" android:layout_width="match_parent"
+            android:layout_height="0dp" android:layout_weight="1" />
+        <Button android:id="@+id/wallpaperButton" android:layout_width="match_parent"
+            android:layout_height="48dp" android:text="Set Home Wallpaper" />
+    </LinearLayout>
+</FrameLayout>
