@@ -1,22 +1,27 @@
 package com.sed.browser
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.view.Gravity
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.TextView
+import java.io.ByteArrayInputStream
 import java.net.URLEncoder
 import kotlin.math.abs
 
@@ -49,8 +54,6 @@ class MainActivity : Activity() {
         browserContainer = findViewById(R.id.browserContainer)
         toolbar = findViewById(R.id.browserToolbar)
         addressBar = findViewById(R.id.address)
-
-        // Keep website login sessions and normal WebView cache between launches.
         CookieManager.getInstance().setAcceptCookie(true)
 
         addressBar.setOnEditorActionListener { _, actionId, _ ->
@@ -86,6 +89,21 @@ class MainActivity : Activity() {
                 setSupportMultipleWindows(false)
             }
             webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView?,
+                    request: WebResourceRequest?
+                ): WebResourceResponse? {
+                    val requestUrl = request?.url?.toString() ?: return null
+                    if (SedAdBlocker.shouldBlock(requestUrl)) {
+                        return WebResourceResponse(
+                            "text/plain",
+                            "utf-8",
+                            ByteArrayInputStream(ByteArray(0))
+                        )
+                    }
+                    return super.shouldInterceptRequest(view, request)
+                }
+
                 override fun onPageFinished(view: WebView?, pageUrl: String?) {
                     if (this@MainActivity.tabs.getOrNull(activeTab) === view &&
                         pageUrl != null && !addressBar.hasFocus()
@@ -111,7 +129,17 @@ class MainActivity : Activity() {
     }
 
     private fun attachGestures(webView: WebView) {
+        val doubleTapDetector = GestureDetector(this,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDown(event: MotionEvent): Boolean = true
+                override fun onDoubleTap(event: MotionEvent): Boolean {
+                    showTabList()
+                    return true
+                }
+            })
+
         webView.setOnTouchListener { _, event ->
+            doubleTapDetector.onTouchEvent(event)
             when (event.actionMasked) {
                 MotionEvent.ACTION_POINTER_DOWN -> {
                     if (event.pointerCount >= 2) {
@@ -129,7 +157,6 @@ class MainActivity : Activity() {
                         if (abs(dx) > 120f && abs(dx) > abs(dy) * 1.25f) {
                             horizontalGestureHandled = true
                             if (dx < 0) {
-                                // Two fingers right-to-left: next tab, or create one.
                                 if (activeTab < tabs.lastIndex) {
                                     activeTab++
                                     showActiveTab()
@@ -140,7 +167,6 @@ class MainActivity : Activity() {
                                     showActiveTab()
                                 }
                             } else if (activeTab > 0) {
-                                // Two fingers left-to-right: previous tab.
                                 activeTab--
                                 showActiveTab()
                             }
@@ -155,6 +181,36 @@ class MainActivity : Activity() {
             }
             false
         }
+    }
+
+    private fun showTabList() {
+        if (tabs.isEmpty()) return
+        val labels = tabs.mapIndexed { index, webView ->
+            val title = webView.title?.takeIf { it.isNotBlank() } ?: "New tab"
+            val host = webView.url?.removePrefix("https://")?.removePrefix("http://") ?: ""
+            (if (index == activeTab) "✓ " else "") + title + if (host.isNotBlank()) "\\n$host" else ""
+        }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setTitle("Open tabs  •  ${tabs.size}/8")
+            .setItems(labels) { dialog, which ->
+                activeTab = which
+                showActiveTab()
+                dialog.dismiss()
+            }
+            .setPositiveButton("New tab") { _, _ ->
+                if (tabs.size < 8) createTab("https://www.google.com")
+                else showTabLimitMessage()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun showTabLimitMessage() {
+        AlertDialog.Builder(this)
+            .setMessage("Maximum 8 tabs are open. Close a tab before creating another.")
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     private fun showActiveTab() {
