@@ -8,7 +8,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -52,10 +51,7 @@ class MainActivity : Activity() {
         addressBar = findViewById(R.id.address)
 
         // Keep website login sessions and normal WebView cache between launches.
-        CookieManager.getInstance().apply {
-            setAcceptCookie(true)
-            setAcceptThirdPartyCookies(createCookieHost(), true)
-        }
+        CookieManager.getInstance().setAcceptCookie(true)
 
         addressBar.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE) {
@@ -67,8 +63,6 @@ class MainActivity : Activity() {
         createTab("https://www.google.com")
         showSplash()
     }
-
-    private fun createCookieHost(): WebView = tabs.firstOrNull() ?: WebView(this)
 
     private fun createTab(url: String) {
         if (tabs.size >= 8) {
