@@ -66,6 +66,7 @@ class MainActivity : Activity() {
 
     private fun createTab(url: String) {
         if (tabs.size >= 8) {
+            browserContainer.removeView(tabs.first())
             tabs.first().destroy()
             tabs.removeAt(0)
             if (activeTab > 0) activeTab--
