@@ -204,9 +204,9 @@ class MainActivity : Activity() {
             .putInt("active_tab", activeTab.coerceIn(0, tabs.lastIndex))
 
         tabs.forEachIndexed { index, webView ->
-            val currentUrl = webView.url ?: sessionPrefs.getString(
-                "tab_url_$index", "https://www.google.com"
-            )
+            val currentUrl = if (webView.url?.startsWith("https://sed-browser.local/") == true) {
+                sessionPrefs.getString("offline_last_url_$index", "https://www.google.com")
+            } else webView.url ?: sessionPrefs.getString("tab_url_$index", "https://www.google.com")
             editor.putString("tab_url_$index", currentUrl)
 
             try {
@@ -279,8 +279,10 @@ class MainActivity : Activity() {
     }
 
     private fun showOfflineHome(webView: WebView, lastUrl: String) {
+        val tabIndex = tabs.indexOf(webView)
+        if (tabIndex >= 0) sessionPrefs.edit().putString("offline_last_url_$tabIndex", lastUrl).apply()
         val safeUrl = lastUrl.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
-        val html = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><meta charset='utf-8'><style>*{box-sizing:border-box;color:#eb232d}body{margin:0;min-height:100vh;background:#080d18;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;padding:28px}main{max-width:440px}h1{font-size:42px;letter-spacing:5px;margin:0 0 12px}p{font-size:15px;line-height:1.6}.url{font-size:12px;overflow-wrap:anywhere;margin:18px 0}a{display:inline-block;border:1px solid #eb232d;border-radius:24px;padding:12px 22px;text-decoration:none;margin-top:12px;font-weight:700}</style></head><body><main><h1>SED</h1><h2>No Internet Connection</h2><p>Your browser session is saved on this device.</p><div class='url'>"+safeUrl+"</div><a href='"+safeUrl+"'>Retry last page</a></main></body></html>"
+        val html = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><meta charset='utf-8'><style>*{box-sizing:border-box;color:#e8edf7}body{margin:0;min-height:100vh;background:#080d18;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;padding:28px}main{max-width:440px}h1{font-size:42px;letter-spacing:5px;margin:0 0 12px}p{font-size:15px;line-height:1.6}.url{font-size:12px;overflow-wrap:anywhere;margin:18px 0}a{display:inline-block;border:1px solid #eb232d;border-radius:24px;padding:12px 22px;text-decoration:none;margin-top:12px;font-weight:700}</style></head><body><main><h1>SED</h1><h2>No Internet Connection</h2><p>Your browser session is saved on this device.</p><div class='url'>"+safeUrl+"</div><a href='"+safeUrl+"'>Retry last page</a></main></body></html>"
         webView.loadDataWithBaseURL("https://sed-browser.local/", html, "text/html", "UTF-8", null)
     }
     private fun attachGestures(webView: WebView) {
