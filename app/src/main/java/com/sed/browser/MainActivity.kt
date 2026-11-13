@@ -282,10 +282,30 @@ class MainActivity : Activity() {
     private fun showOfflineHome(webView: WebView, lastUrl: String) {
         val tabIndex = tabs.indexOf(webView)
         if (tabIndex >= 0) sessionPrefs.edit().putString("offline_last_url_$tabIndex", lastUrl).apply()
-        val safeUrl = lastUrl.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
-        val html = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><meta charset='utf-8'><style>*{box-sizing:border-box;color:#e8edf7}body{margin:0;min-height:100vh;background:#080d18;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;padding:28px}main{max-width:440px}h1{font-size:42px;letter-spacing:5px;margin:0 0 12px}p{font-size:15px;line-height:1.6}.url{font-size:12px;overflow-wrap:anywhere;margin:18px 0}a{display:inline-block;border:1px solid #eb232d;border-radius:24px;padding:12px 22px;text-decoration:none;margin-top:12px;font-weight:700}</style></head><body><main><h1>SED</h1><h2>No Internet Connection</h2><p>Your browser session is saved on this device.</p><div class='url'>"+safeUrl+"</div><a href='"+safeUrl+"'>Retry last page</a></main></body></html>"
+        val safeUrl = lastUrl.replace("&", "&amp;").replace("'", "&#39;").replace("<", "&lt;").replace(">", "&gt;")
+        val html = """
+            <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+            <meta charset="utf-8"><style>
+            *{box-sizing:border-box}body{margin:0;min-height:100vh;background:#080d18;color:#e8edf7;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;padding:20px;text-align:center}
+            main{width:100%;max-width:420px}h1{letter-spacing:6px;margin:0 0 8px;font-size:40px}.status{color:#eb232d;font-weight:bold;margin-bottom:12px}
+            p{opacity:.75;margin:0 0 18px;font-size:14px}#game{position:relative;width:100%;height:360px;background:#101827;border:1px solid #eb232d;border-radius:20px;overflow:hidden;touch-action:none}
+            .coin{position:absolute;width:28px;height:28px;border-radius:50%;background:#ffd54a;box-shadow:0 0 16px #ffd54a}.player{position:absolute;width:42px;height:42px;border-radius:50%;background:#eb232d;box-shadow:0 0 16px #eb232d}
+            .score{margin:14px 0;font-size:20px;color:#eb232d}button{border:1px solid #eb232d;border-radius:24px;background:transparent;color:#eb232d;padding:11px 22px;font-size:15px}.tip{font-size:12px;margin-top:12px;opacity:.7}
+            </style></head><body><main><h1>SED</h1><div class="status">OFFLINE MODE</div><p>No internet. Play while you wait.</p>
+            <div id="game"><div class="player" id="p"></div><div class="coin" id="c"></div></div><div class="score">Score: <span id="s">0</span></div>
+            <button onclick="location.href='$safeUrl'">Retry connection</button><div class="tip">Drag the red circle to collect coins</div>
+            <script>
+            const g=document.getElementById('game'),p=document.getElementById('p'),c=document.getElementById('c'),s=document.getElementById('s');
+            let x=150,y=150,score=0,drag=false,ox=0,oy=0;
+            function pos(){p.style.left=x+'px';p.style.top=y+'px'}function coin(){c.style.left=Math.random()*(g.clientWidth-30)+'px';c.style.top=Math.random()*(g.clientHeight-30)+'px'}
+            function move(e){if(!drag)return;let r=g.getBoundingClientRect(),t=e.touches?e.touches[0]:e;x=Math.max(0,Math.min(g.clientWidth-42,t.clientX-r.left-ox));y=Math.max(0,Math.min(g.clientHeight-42,t.clientY-r.top-oy));pos();let a=p.getBoundingClientRect(),b=c.getBoundingClientRect();if(Math.hypot((a.left+a.width/2)-(b.left+b.width/2),(a.top+a.height/2)-(b.top+b.height/2))<35){score++;s.textContent=score;coin();}}
+            function down(e){drag=true;let t=e.touches?e.touches[0]:e,r=p.getBoundingClientRect();ox=t.clientX-r.left;oy=t.clientY-r.top}
+            p.addEventListener('mousedown',down);p.addEventListener('touchstart',down);window.addEventListener('mousemove',move);window.addEventListener('touchmove',move,{passive:false});window.addEventListener('mouseup',()=>drag=false);window.addEventListener('touchend',()=>drag=false);pos();coin();
+            </script></main></body></html>
+        """.trimIndent()
         webView.loadDataWithBaseURL("https://sed-browser.local/", html, "text/html", "UTF-8", null)
     }
+
     private fun attachGestures(webView: WebView) {
         val doubleTapDetector = GestureDetector(this,
             object : GestureDetector.SimpleOnGestureListener() {
