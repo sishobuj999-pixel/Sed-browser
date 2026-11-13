@@ -76,7 +76,7 @@ class MainActivity : Activity() {
         val restored = restoreSession()
         if (!restored) {
             val tab = createTab("https://www.google.com")
-            if (!isOnline) showOfflineHome(tab, "https://www.google.com")
+            if (!isOnline) { /* keep the normal home/session view; only change appearance */ }
         }
         updateNetworkAppearance()
         showSplash()
@@ -128,9 +128,8 @@ class MainActivity : Activity() {
 
                 override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?) {
                     super.onReceivedError(view, request, error)
-                    if (view != null && request?.isForMainFrame == true && !hasValidatedInternet()) {
-                        showOfflineHome(view, request.url.toString())
-                    }
+                    // Never replace the currently visible page merely because connectivity changed.
+                    // Offline navigation is handled before a new URL is loaded.
                 }
             }
             webChromeClient = WebChromeClient()
@@ -151,7 +150,7 @@ class MainActivity : Activity() {
 
         val restored = restoreWebViewState(webView, restoreIndex)
         if (!restored) {
-            if (isOnline) webView.loadUrl(url) else showOfflineHome(webView, url)
+            webView.loadUrl(url)
         }
         return webView
     }
@@ -247,22 +246,16 @@ class MainActivity : Activity() {
     private fun registerNetworkMonitor() {
         val manager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) { runOnUiThread { val online = hasValidatedInternet(); if (online != isOnline) { isOnline = online; updateNetworkAppearance() } } }
-            override fun onLost(network: Network) {
-                runOnUiThread {
-                    val online = hasValidatedInternet()
-                    if (online != isOnline) {
-                        isOnline = online; updateNetworkAppearance()
-                        if (!online) {
-                            val current = tabs.getOrNull(activeTab)
-                            if (current != null) {
-                                val last = current.url?.takeIf { it.startsWith("http") } ?: sessionPrefs.getString("tab_url_$activeTab", "https://www.google.com") ?: "https://www.google.com"
-                                showOfflineHome(current, last)
-                            }
-                        }
-                    }
+            private fun sync() = runOnUiThread {
+                val online = hasValidatedInternet()
+                if (online != isOnline) {
+                    isOnline = online
+                    updateNetworkAppearance()
                 }
             }
+            override fun onAvailable(network: Network) = sync()
+            override fun onLost(network: Network) = sync()
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) = sync()
         }
         networkCallback = callback
         try { manager.registerDefaultNetworkCallback(callback) } catch (_: Exception) { networkCallback = null }
@@ -275,11 +268,11 @@ class MainActivity : Activity() {
     }
 
     private fun applyTextStatus(webView: WebView) {
-        val js = if (isOnline) "document.getElementById('sed-offline-text-style')?.remove();" else "(function(){var s=document.getElementById('sed-offline-text-style');if(s)s.remove();s=document.createElement('style');s.id='sed-offline-text-style';s.textContent='*{color:#eb232d!important;-webkit-text-fill-color:#eb232d!important}';(document.head||document.documentElement).appendChild(s);})();"
+        val js = if (isOnline) "(function(){var s=document.getElementById('sed-offline-text-style');if(s)s.remove();})();" else "(function(){var s=document.getElementById('sed-offline-text-style');if(s)s.remove();s=document.createElement('style');s.id='sed-offline-text-style';s.textContent='*{color:#eb232d!important;-webkit-text-fill-color:#eb232d!important}';(document.head||document.documentElement).appendChild(s);})();"
         webView.evaluateJavascript(js, null)
     }
 
-    private fun showOfflineHome(webView: WebView, lastUrl: String) {
+    private fun showOfflineGame(webView: WebView, lastUrl: String) {
         val tabIndex = tabs.indexOf(webView)
         if (tabIndex >= 0) sessionPrefs.edit().putString("offline_last_url_$tabIndex", lastUrl).apply()
         val safeUrl = lastUrl.replace("&", "&amp;").replace("'", "&#39;").replace("<", "&lt;").replace(">", "&gt;")
@@ -292,14 +285,15 @@ class MainActivity : Activity() {
             .coin{position:absolute;width:28px;height:28px;border-radius:50%;background:#ffd54a;box-shadow:0 0 16px #ffd54a}.player{position:absolute;width:42px;height:42px;border-radius:50%;background:#eb232d;box-shadow:0 0 16px #eb232d}
             .score{margin:14px 0;font-size:20px;color:#eb232d}button{border:1px solid #eb232d;border-radius:24px;background:transparent;color:#eb232d;padding:11px 22px;font-size:15px}.tip{font-size:12px;margin-top:12px;opacity:.7}
             </style></head><body><main><h1>SED</h1><div class="status">OFFLINE MODE</div><p>No internet. Play while you wait.</p>
-            <div id="game"><div class="player" id="p"></div><div class="coin" id="c"></div></div><div class="score">Score: <span id="s">0</span></div>
+            <div id="game"><div class="player" id="p"></div><div class="coin" id="c"></div></div><div class="score">Target: <b>10</b> coins in <span id="t">30</span>s • Score: <span id="s">0</span></div>
             <button onclick="location.href='$safeUrl'">Retry connection</button><div class="tip">Drag the red circle to collect coins</div>
             <script>
             const g=document.getElementById('game'),p=document.getElementById('p'),c=document.getElementById('c'),s=document.getElementById('s');
-            let x=150,y=150,score=0,drag=false,ox=0,oy=0;
+            const target=10,seconds=30;let left=seconds,x=150,y=150,score=0,drag=false,ox=0,oy=0;
             function pos(){p.style.left=x+'px';p.style.top=y+'px'}function coin(){c.style.left=Math.random()*(g.clientWidth-30)+'px';c.style.top=Math.random()*(g.clientHeight-30)+'px'}
             function move(e){if(!drag)return;let r=g.getBoundingClientRect(),t=e.touches?e.touches[0]:e;x=Math.max(0,Math.min(g.clientWidth-42,t.clientX-r.left-ox));y=Math.max(0,Math.min(g.clientHeight-42,t.clientY-r.top-oy));pos();let a=p.getBoundingClientRect(),b=c.getBoundingClientRect();if(Math.hypot((a.left+a.width/2)-(b.left+b.width/2),(a.top+a.height/2)-(b.top+b.height/2))<35){score++;s.textContent=score;coin();}}
             function down(e){drag=true;let t=e.touches?e.touches[0]:e,r=p.getBoundingClientRect();ox=t.clientX-r.left;oy=t.clientY-r.top}
+            const timer=setInterval(()=>{left--;document.getElementById('t').textContent=left;if(left<=0){clearInterval(timer);drag=false;document.querySelector('.status').textContent=score>=target?'TARGET COMPLETE!':'TIME UP — TRY AGAIN';}},1000);
             p.addEventListener('mousedown',down);p.addEventListener('touchstart',down);window.addEventListener('mousemove',move);window.addEventListener('touchmove',move,{passive:false});window.addEventListener('mouseup',()=>drag=false);window.addEventListener('touchend',()=>drag=false);pos();coin();
             </script></main></body></html>
         """.trimIndent()
@@ -418,7 +412,7 @@ class MainActivity : Activity() {
             else -> "https://www.google.com/search?q=" + URLEncoder.encode(text, "UTF-8")
         }
         val current = tabs.getOrNull(activeTab)
-        if (current != null) { if (isOnline) current.loadUrl(target) else showOfflineHome(current, target) }
+        if (current != null) { if (isOnline) current.loadUrl(target) else showOfflineGame(current, target) }
         hideHandler.postDelayed(hideToolbar, 300)
     }
 
