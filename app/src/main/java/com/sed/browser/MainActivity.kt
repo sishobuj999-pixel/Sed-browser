@@ -2,6 +2,9 @@ package com.sed.browser
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -38,6 +41,8 @@ class MainActivity : Activity() {
     private var gestureStartX = 0f
     private var gestureStartY = 0f
     private var horizontalGestureHandled = false
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var isOnline = false
 
     private val hideToolbar = Runnable {
         toolbar.visibility = View.GONE
@@ -58,6 +63,8 @@ class MainActivity : Activity() {
         toolbar = findViewById(R.id.browserToolbar)
         addressBar = findViewById(R.id.address)
         CookieManager.getInstance().setAcceptCookie(true)
+        isOnline = hasValidatedInternet()
+        registerNetworkMonitor()
 
         addressBar.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE) {
@@ -68,12 +75,13 @@ class MainActivity : Activity() {
 
         val restored = restoreSession()
         if (!restored) {
-            createTab("https://www.google.com")
-            showSplash()
+            val tab = createTab("https://www.google.com")
+            if (!isOnline) showOfflineHome(tab, "https://www.google.com") else showSplash()
         }
+        updateNetworkAppearance()
     }
 
-    private fun createTab(url: String, restoreIndex: Int? = null) {
+    private fun createTab(url: String, restoreIndex: Int? = null): WebView {
         if (tabs.size >= 8) {
             browserContainer.removeView(tabs.first())
             tabs.first().destroy()
@@ -89,7 +97,7 @@ class MainActivity : Activity() {
                 databaseEnabled = true
                 loadsImagesAutomatically = true
                 mediaPlaybackRequiresUserGesture = true
-                cacheMode = WebSettings.LOAD_DEFAULT
+                cacheMode = if (isOnline) WebSettings.LOAD_DEFAULT else WebSettings.LOAD_CACHE_ELSE_NETWORK
                 saveFormData = true
                 allowFileAccess = false
                 setSupportMultipleWindows(false)
@@ -111,9 +119,17 @@ class MainActivity : Activity() {
                 }
 
                 override fun onPageFinished(view: WebView?, pageUrl: String?) {
+                    if (view != null) applyTextStatus(view)
                     if (this@MainActivity.tabs.getOrNull(activeTab) === view &&
                         pageUrl != null && !addressBar.hasFocus()
                     ) addressBar.setText(pageUrl)
+                }
+
+                override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                    super.onReceivedError(view, request, error)
+                    if (view != null && request?.isForMainFrame == true && !hasValidatedInternet()) {
+                        showOfflineHome(view, request.url.toString())
+                    }
                 }
             }
             webChromeClient = WebChromeClient()
@@ -133,7 +149,10 @@ class MainActivity : Activity() {
         showActiveTab()
 
         val restored = restoreWebViewState(webView, restoreIndex)
-        if (!restored) webView.loadUrl(url)
+        if (!restored) {
+            if (isOnline) webView.loadUrl(url) else showOfflineHome(webView, url)
+        }
+        return webView
     }
 
     /**
@@ -217,6 +236,53 @@ class MainActivity : Activity() {
         CookieManager.getInstance().flush()
     }
 
+    private fun hasValidatedInternet(): Boolean {
+        val manager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = manager.activeNetwork ?: return false
+        val capabilities = manager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    private fun registerNetworkMonitor() {
+        val manager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) { runOnUiThread { val online = hasValidatedInternet(); if (online != isOnline) { isOnline = online; updateNetworkAppearance() } } }
+            override fun onLost(network: Network) {
+                runOnUiThread {
+                    val online = hasValidatedInternet()
+                    if (online != isOnline) {
+                        isOnline = online; updateNetworkAppearance()
+                        if (!online) {
+                            val current = tabs.getOrNull(activeTab)
+                            if (current != null) {
+                                val last = current.url?.takeIf { it.startsWith("http") } ?: sessionPrefs.getString("tab_url_$activeTab", "https://www.google.com") ?: "https://www.google.com"
+                                showOfflineHome(current, last)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        networkCallback = callback
+        try { manager.registerDefaultNetworkCallback(callback) } catch (_: Exception) { networkCallback = null }
+    }
+
+    private fun updateNetworkAppearance() {
+        addressBar.setTextColor(if (isOnline) Color.rgb(32, 33, 36) else Color.rgb(235, 35, 45))
+        addressBar.setHintTextColor(if (isOnline) Color.rgb(102, 112, 133) else Color.rgb(235, 35, 45))
+        tabs.forEach { applyTextStatus(it) }
+    }
+
+    private fun applyTextStatus(webView: WebView) {
+        val js = if (isOnline) "document.getElementById('sed-offline-text-style')?.remove();" else "(function(){var s=document.getElementById('sed-offline-text-style');if(s)s.remove();s=document.createElement('style');s.id='sed-offline-text-style';s.textContent='*{color:#eb232d!important;-webkit-text-fill-color:#eb232d!important}';(document.head||document.documentElement).appendChild(s);})();"
+        webView.evaluateJavascript(js, null)
+    }
+
+    private fun showOfflineHome(webView: WebView, lastUrl: String) {
+        val safeUrl = lastUrl.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+        val html = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><meta charset='utf-8'><style>*{box-sizing:border-box;color:#eb232d}body{margin:0;min-height:100vh;background:#080d18;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;padding:28px}main{max-width:440px}h1{font-size:42px;letter-spacing:5px;margin:0 0 12px}p{font-size:15px;line-height:1.6}.url{font-size:12px;overflow-wrap:anywhere;margin:18px 0}a{display:inline-block;border:1px solid #eb232d;border-radius:24px;padding:12px 22px;text-decoration:none;margin-top:12px;font-weight:700}</style></head><body><main><h1>SED</h1><h2>No Internet Connection</h2><p>Your browser session is saved on this device.</p><div class='url'>"+safeUrl+"</div><a href='"+safeUrl+"'>Retry last page</a></main></body></html>"
+        webView.loadDataWithBaseURL("https://sed-browser.local/", html, "text/html", "UTF-8", null)
+    }
     private fun attachGestures(webView: WebView) {
         val doubleTapDetector = GestureDetector(this,
             object : GestureDetector.SimpleOnGestureListener() {
@@ -307,6 +373,7 @@ class MainActivity : Activity() {
             webView.visibility = if (index == activeTab) View.VISIBLE else View.GONE
         }
         addressBar.setText(tabs.getOrNull(activeTab)?.url ?: "")
+        updateNetworkAppearance()
         if (tabs.isNotEmpty()) {
             sessionPrefs.edit().putInt("active_tab", activeTab).apply()
         }
@@ -327,7 +394,8 @@ class MainActivity : Activity() {
             text.contains(".") && !text.contains(" ") -> "https://$text"
             else -> "https://www.google.com/search?q=" + URLEncoder.encode(text, "UTF-8")
         }
-        tabs.getOrNull(activeTab)?.loadUrl(target)
+        val current = tabs.getOrNull(activeTab)
+        if (current != null) { if (isOnline) current.loadUrl(target) else showOfflineHome(current, target) }
         hideHandler.postDelayed(hideToolbar, 300)
     }
 
@@ -367,6 +435,12 @@ class MainActivity : Activity() {
         } else super.onBackPressed()
     }
 
+    override fun onResume() {
+        super.onResume()
+        val online = hasValidatedInternet()
+        if (online != isOnline) { isOnline = online; updateNetworkAppearance() }
+    }
+
     override fun onPause() {
         persistSession()
         super.onPause()
@@ -379,6 +453,8 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         persistSession()
+        networkCallback?.let { try { (getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it) } catch (_: Exception) {} }
+        networkCallback = null
         hideHandler.removeCallbacksAndMessages(null)
         tabs.forEach { it.stopLoading(); it.destroy() }
         tabs.clear()
