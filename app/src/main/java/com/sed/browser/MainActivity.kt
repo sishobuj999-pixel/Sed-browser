@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
+import android.os.Parcel
 import android.view.Gravity
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -22,6 +23,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.TextView
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.net.URLEncoder
 import kotlin.math.abs
 
@@ -32,6 +34,7 @@ class MainActivity : Activity() {
     private val tabs = mutableListOf<WebView>()
     private var activeTab = 0
     private val hideHandler = Handler()
+    private val sessionPrefs by lazy { getSharedPreferences("sed_browser_session", MODE_PRIVATE) }
     private var gestureStartX = 0f
     private var gestureStartY = 0f
     private var horizontalGestureHandled = false
@@ -63,11 +66,14 @@ class MainActivity : Activity() {
             } else false
         }
 
-        createTab("https://www.google.com")
-        showSplash()
+        val restored = restoreSession()
+        if (!restored) {
+            createTab("https://www.google.com")
+            showSplash()
+        }
     }
 
-    private fun createTab(url: String) {
+    private fun createTab(url: String, restoreIndex: Int? = null) {
         if (tabs.size >= 8) {
             browserContainer.removeView(tabs.first())
             tabs.first().destroy()
@@ -125,7 +131,90 @@ class MainActivity : Activity() {
         activeTab = tabs.lastIndex
         attachGestures(webView)
         showActiveTab()
-        webView.loadUrl(url)
+
+        val restored = restoreWebViewState(webView, restoreIndex)
+        if (!restored) webView.loadUrl(url)
+    }
+
+    /**
+     * Restores the saved tab list and each WebView's navigation state.
+     * WebView can restore history, cookies and cached resources, but Android's
+     * WebView does not guarantee that the rendered page bitmap survives process death.
+     */
+    private fun restoreSession(): Boolean {
+        val count = sessionPrefs.getInt("tab_count", 0).coerceIn(0, 8)
+        if (count == 0) return false
+
+        for (index in 0 until count) {
+            val url = sessionPrefs.getString("tab_url_$index", "https://www.google.com")
+                ?: "https://www.google.com"
+            createTab(url, index)
+        }
+
+        activeTab = sessionPrefs.getInt("active_tab", 0).coerceIn(0, tabs.lastIndex)
+        showActiveTab()
+        return tabs.isNotEmpty()
+    }
+
+    private fun restoreWebViewState(webView: WebView, index: Int?): Boolean {
+        if (index == null) return false
+        val file = File(filesDir, "sed_tab_state_$index.bin")
+        if (!file.exists()) return false
+
+        return try {
+            val bytes = file.readBytes()
+            val parcel = Parcel.obtain()
+            try {
+                parcel.unmarshall(bytes, 0, bytes.size)
+                parcel.setDataPosition(0)
+                val state = parcel.readBundle(javaClass.classLoader) ?: return false
+                webView.restoreState(state) != null
+            } finally {
+                parcel.recycle()
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun persistSession() {
+        if (tabs.isEmpty()) return
+
+        val editor = sessionPrefs.edit()
+            .putInt("tab_count", tabs.size)
+            .putInt("active_tab", activeTab.coerceIn(0, tabs.lastIndex))
+
+        tabs.forEachIndexed { index, webView ->
+            val currentUrl = webView.url ?: sessionPrefs.getString(
+                "tab_url_$index", "https://www.google.com"
+            )
+            editor.putString("tab_url_$index", currentUrl)
+
+            try {
+                val state = Bundle()
+                if (webView.saveState(state) != null) {
+                    val parcel = Parcel.obtain()
+                    try {
+                        parcel.writeBundle(state)
+                        val bytes = parcel.marshall()
+                        val target = File(filesDir, "sed_tab_state_$index.bin")
+                        val temporary = File(filesDir, "sed_tab_state_$index.tmp")
+                        temporary.writeBytes(bytes)
+                        if (!temporary.renameTo(target)) {
+                            target.writeBytes(bytes)
+                            temporary.delete()
+                        }
+                    } finally {
+                        parcel.recycle()
+                    }
+                }
+            } catch (_: Exception) {
+                // The URL remains saved as a fallback if WebView state cannot be serialized.
+            }
+        }
+
+        editor.apply()
+        CookieManager.getInstance().flush()
     }
 
     private fun attachGestures(webView: WebView) {
@@ -188,7 +277,7 @@ class MainActivity : Activity() {
         val labels = tabs.mapIndexed { index, webView ->
             val title = webView.title?.takeIf { it.isNotBlank() } ?: "New tab"
             val host = webView.url?.removePrefix("https://")?.removePrefix("http://") ?: ""
-            (if (index == activeTab) "✓ " else "") + title + if (host.isNotBlank()) "\\n$host" else ""
+            (if (index == activeTab) "✓ " else "") + title + if (host.isNotBlank()) "\n$host" else ""
         }.toTypedArray()
 
         AlertDialog.Builder(this)
@@ -218,6 +307,9 @@ class MainActivity : Activity() {
             webView.visibility = if (index == activeTab) View.VISIBLE else View.GONE
         }
         addressBar.setText(tabs.getOrNull(activeTab)?.url ?: "")
+        if (tabs.isNotEmpty()) {
+            sessionPrefs.edit().putInt("active_tab", activeTab).apply()
+        }
     }
 
     private fun showToolbar() {
@@ -276,11 +368,17 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
-        CookieManager.getInstance().flush()
+        persistSession()
         super.onPause()
     }
 
+    override fun onStop() {
+        persistSession()
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        persistSession()
         hideHandler.removeCallbacksAndMessages(null)
         tabs.forEach { it.stopLoading(); it.destroy() }
         tabs.clear()
