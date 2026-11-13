@@ -445,7 +445,10 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Android API")
     override fun onBackPressed() {
         val current = tabs.getOrNull(activeTab)
-        if (current?.canGoBack() == true) current.goBack()
+        if (current?.url?.startsWith("https://sed-browser.local/") == true && current.canGoBack()) {
+            current.goBack()
+            Handler().postDelayed({ applyTextStatus(current) }, 100)
+        } else if (current?.canGoBack() == true) current.goBack()
         else if (activeTab > 0) {
             activeTab--
             showActiveTab()
