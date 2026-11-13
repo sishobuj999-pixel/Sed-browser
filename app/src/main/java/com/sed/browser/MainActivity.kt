@@ -76,9 +76,10 @@ class MainActivity : Activity() {
         val restored = restoreSession()
         if (!restored) {
             val tab = createTab("https://www.google.com")
-            if (!isOnline) showOfflineHome(tab, "https://www.google.com") else showSplash()
+            if (!isOnline) showOfflineHome(tab, "https://www.google.com")
         }
         updateNetworkAppearance()
+        showSplash()
     }
 
     private fun createTab(url: String, restoreIndex: Int? = null): WebView {
