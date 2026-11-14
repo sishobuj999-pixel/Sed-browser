@@ -2,6 +2,7 @@ package com.sed.browser
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.Dialog
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -24,6 +25,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -357,25 +360,198 @@ class MainActivity : Activity() {
 
     private fun showTabList() {
         if (tabs.isEmpty()) return
-        val labels = tabs.mapIndexed { index, webView ->
-            val title = webView.title?.takeIf { it.isNotBlank() } ?: "New tab"
-            val host = webView.url?.removePrefix("https://")?.removePrefix("http://") ?: ""
-            (if (index == activeTab) "✓ " else "") + title + if (host.isNotBlank()) "\n$host" else ""
-        }.toTypedArray()
 
-        AlertDialog.Builder(this)
-            .setTitle("Open tabs  •  ${tabs.size}/8")
-            .setItems(labels) { dialog, which ->
-                activeTab = which
-                showActiveTab()
-                dialog.dismiss()
+        val dialog = Dialog(this)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(28), dp(18), dp(18))
+            setBackgroundColor(Color.rgb(8, 13, 24))
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val heading = TextView(this).apply {
+            text = "TABS  •  ${tabs.size}/8"
+            textSize = 19f
+            setTextColor(Color.WHITE)
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD)
+        }
+        header.addView(heading, LinearLayout.LayoutParams(0, dp(48), 1f))
+        val add = TextView(this).apply {
+            text = "+  NEW"
+            textSize = 14f
+            setTextColor(Color.rgb(120, 205, 255))
+            gravity = Gravity.CENTER
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setOnClickListener {
+                if (tabs.size < 8) {
+                    dialog.dismiss()
+                    createTab("https://www.google.com")
+                } else showTabLimitMessage()
             }
-            .setPositiveButton("New tab") { _, _ ->
-                if (tabs.size < 8) createTab("https://www.google.com")
-                else showTabLimitMessage()
+        }
+        header.addView(add)
+        root.addView(header)
+
+        val hint = TextView(this).apply {
+            text = "Swipe down to open  •  Swipe up to close permanently"
+            textSize = 12f
+            setTextColor(Color.rgb(155, 166, 185))
+            setPadding(0, 0, 0, dp(14))
+        }
+        root.addView(hint)
+
+        val scroll = ScrollView(this)
+        val stack = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        scroll.addView(stack)
+        root.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+
+        fun rebuildCards() {
+            stack.removeAllViews()
+            tabs.forEachIndexed { index, webView ->
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(18), dp(16), dp(18), dp(16))
+                    setBackgroundColor(if (index == activeTab) Color.rgb(35, 52, 78) else Color.rgb(23, 32, 48))
+                    elevation = dp(3).toFloat()
+                }
+                val top = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                val title = TextView(this).apply {
+                    val pageTitle = webView.title?.takeIf { it.isNotBlank() } ?: "New tab"
+                    text = (if (index == activeTab) "●  " else "") + pageTitle
+                    textSize = 17f
+                    maxLines = 2
+                    setTextColor(Color.WHITE)
+                    typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                }
+                top.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                val close = TextView(this).apply {
+                    text = "×"
+                    textSize = 28f
+                    setTextColor(Color.rgb(255, 105, 115))
+                    gravity = Gravity.CENTER
+                    setPadding(dp(12), 0, dp(4), 0)
+                    setOnClickListener {
+                        removeTabPermanently(index)
+                        if (tabs.isEmpty()) {
+                            dialog.dismiss()
+                            createTab("https://www.google.com")
+                        } else rebuildCards()
+                    }
+                }
+                top.addView(close)
+                card.addView(top)
+
+                val pageUrl = TextView(this).apply {
+                    text = webView.url ?: "No address"
+                    textSize = 12f
+                    maxLines = 2
+                    setTextColor(Color.rgb(170, 185, 205))
+                    setPadding(0, dp(8), 0, 0)
+                }
+                card.addView(pageUrl)
+                val gestureHint = TextView(this).apply {
+                    text = "↑ close tab     ↓ open tab"
+                    textSize = 11f
+                    setTextColor(Color.rgb(120, 205, 255))
+                    setPadding(0, dp(12), 0, 0)
+                }
+                card.addView(gestureHint)
+
+                var downY = 0f
+                card.setOnTouchListener { _, event ->
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            downY = event.rawY
+                            true
+                        }
+                        MotionEvent.ACTION_UP -> {
+                            val delta = event.rawY - downY
+                            if (delta < -dp(55)) {
+                                removeTabPermanently(index)
+                                if (tabs.isEmpty()) {
+                                    dialog.dismiss()
+                                    createTab("https://www.google.com")
+                                } else rebuildCards()
+                            } else if (delta > dp(55)) {
+                                activeTab = tabs.indexOf(webView).coerceAtLeast(0)
+                                showActiveTab()
+                                dialog.dismiss()
+                            } else {
+                                activeTab = tabs.indexOf(webView).coerceAtLeast(0)
+                                showActiveTab()
+                                dialog.dismiss()
+                            }
+                            true
+                        }
+                        MotionEvent.ACTION_CANCEL -> true
+                        else -> true
+                    }
+                }
+
+                val cardParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(142)
+                )
+                cardParams.bottomMargin = dp(14)
+                stack.addView(card, cardParams)
             }
-            .setNegativeButton("Close", null)
-            .show()
+        }
+        rebuildCards()
+
+        val footer = TextView(this).apply {
+            text = "Tap a card to open  •  × to close"
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(155, 166, 185))
+            setPadding(0, dp(12), 0, 0)
+        }
+        root.addView(footer)
+
+        dialog.setContentView(root)
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        }
+        dialog.show()
+        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun removeTabPermanently(index: Int) {
+        if (index !in tabs.indices) return
+        val removed = tabs.removeAt(index)
+        browserContainer.removeView(removed)
+        removed.stopLoading()
+        removed.destroy()
+
+        if (tabs.isEmpty()) {
+            activeTab = 0
+        } else {
+            activeTab = when {
+                index < activeTab -> activeTab - 1
+                index == activeTab -> index.coerceAtMost(tabs.lastIndex)
+                else -> activeTab
+            }.coerceIn(0, tabs.lastIndex)
+        }
+
+        // Rebuild indexed state files so a closed tab cannot return after app restart.
+        for (i in 0..8) {
+            File(filesDir, "sed_tab_state_$i.bin").delete()
+            File(filesDir, "sed_tab_state_$i.tmp").delete()
+            sessionPrefs.edit().remove("offline_last_url_$i").apply()
+        }
+        persistSession()
+        showActiveTab()
     }
 
     private fun showTabLimitMessage() {
