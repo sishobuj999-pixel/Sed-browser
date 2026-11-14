@@ -449,14 +449,27 @@ class MainActivity : Activity() {
             if (index !in tabs.indices) return
             selected = index
             val chosen = cardViews.getOrNull(index)
-            chosen?.animate()?.translationY(dp(90).toFloat())?.scaleX(0.94f)?.scaleY(0.94f)
-                ?.setDuration(190)?.setInterpolator(interpolator)?.start()
-            overlay.animate().alpha(0f).setDuration(190).setInterpolator(interpolator)
+            if (chosen == null) {
+                activeTab = index
+                showActiveTab()
+                browserContainer.removeView(overlay)
+                previewBitmaps.forEach { if (!it.isRecycled) it.recycle() }
+                return
+            }
+
+            // Morph the selected preview smoothly into the full browser viewport.
+            overlay.setBackgroundColor(Color.TRANSPARENT)
+            chosen.animate().translationX(0f).translationY(0f)
+                .scaleX(screenWidth.toFloat() / cardWidth.toFloat())
+                .scaleY(screenHeight.toFloat() / cardHeight.toFloat())
+                .setDuration(320).setInterpolator(interpolator)
                 .withEndAction {
                     activeTab = index
                     showActiveTab()
-                    browserContainer.removeView(overlay)
-                    previewBitmaps.forEach { if (!it.isRecycled) it.recycle() }
+                    chosen.animate().alpha(0f).setDuration(70).withEndAction {
+                        browserContainer.removeView(overlay)
+                        previewBitmaps.forEach { if (!it.isRecycled) it.recycle() }
+                    }.start()
                 }.start()
         }
 
@@ -619,28 +632,39 @@ class MainActivity : Activity() {
     }
 
     private fun showSplash() {
-        val splash = TextView(this).apply {
+        // Transparent full-screen layer: only the SED lettering animates, never a black panel.
+        val splashLayer = FrameLayout(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            isClickable = false
+        }
+        val logo = TextView(this).apply {
             text = "SED"
             textSize = 54f
             setTextColor(Color.WHITE)
             typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.BOLD)
             letterSpacing = 0.18f
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.rgb(9, 14, 24))
+            setShadowLayer(dp(12).toFloat(), 0f, 0f, Color.BLACK)
             alpha = 1f
             scaleX = 0.72f
             scaleY = 0.72f
         }
+        splashLayer.addView(logo, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.CENTER
+        ))
         addContentView(
-            splash,
+            splashLayer,
             ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
-        splash.animate().scaleX(1.28f).scaleY(1.28f).alpha(0f)
-            .setDuration(420).withEndAction {
-                (splash.parent as? ViewGroup)?.removeView(splash)
+        logo.animate().scaleX(1.28f).scaleY(1.28f).alpha(0f)
+            .setDuration(900).setInterpolator(DecelerateInterpolator(1.5f))
+            .withEndAction {
+                (splashLayer.parent as? ViewGroup)?.removeView(splashLayer)
             }.start()
     }
 
