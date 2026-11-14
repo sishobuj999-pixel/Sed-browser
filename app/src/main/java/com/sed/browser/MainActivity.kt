@@ -2,7 +2,6 @@ package com.sed.browser
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.Dialog
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -25,9 +24,12 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.ScrollView
+import android.widget.ImageView
 import android.widget.TextView
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.GradientDrawable
+import android.view.animation.DecelerateInterpolator
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.net.URLEncoder
@@ -359,170 +361,154 @@ class MainActivity : Activity() {
     }
 
     private fun showTabList() {
-        if (tabs.isEmpty()) return
+        if (tabs.isEmpty() || browserContainer.childCount == 0) return
 
-        val dialog = Dialog(this)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(28), dp(18), dp(18))
-            setBackgroundColor(Color.rgb(8, 13, 24))
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(Color.argb(112, 0, 0, 0))
+            alpha = 0f
+        }
+        val cardViews = mutableListOf<FrameLayout>()
+        val previewBitmaps = mutableListOf<Bitmap>()
+        var selected = activeTab.coerceIn(0, tabs.lastIndex)
+        var downX = 0f
+        var downY = 0f
+        var gestureHandled = false
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+        val cardWidth = (screenWidth * 0.84f).toInt()
+        val cardHeight = (screenHeight * 0.72f).toInt()
+        val spacing = cardWidth * 0.76f
+        val interpolator = DecelerateInterpolator(1.7f)
+
+        tabs.forEach { webView ->
+            val bitmap = try {
+                val w = webView.width.coerceAtLeast(1)
+                val h = webView.height.coerceAtLeast(1)
+                Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
+                    webView.draw(Canvas(it))
+                }
+            } catch (_: Exception) {
+                Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).also {
+                    it.eraseColor(Color.rgb(12, 16, 24))
+                }
+            }
+            previewBitmaps.add(bitmap)
         }
 
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val heading = TextView(this).apply {
-            text = "TABS  •  ${tabs.size}/8"
-            textSize = 19f
-            setTextColor(Color.WHITE)
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD)
-        }
-        header.addView(heading, LinearLayout.LayoutParams(0, dp(48), 1f))
-        val add = TextView(this).apply {
-            text = "+  NEW"
-            textSize = 14f
-            setTextColor(Color.rgb(120, 205, 255))
-            gravity = Gravity.CENTER
-            setPadding(dp(14), dp(10), dp(14), dp(10))
-            setOnClickListener {
-                if (tabs.size < 8) {
-                    dialog.dismiss()
-                    createTab("https://www.google.com")
-                } else showTabLimitMessage()
+        fun layoutCards(animate: Boolean) {
+            cardViews.forEachIndexed { index, card ->
+                val distance = index - selected
+                val targetX = distance * spacing
+                val targetScale = if (distance == 0) 1f else 0.88f
+                val targetAlpha = if (abs(distance) > 1) 0f else if (distance == 0) 1f else 0.72f
+                card.visibility = if (abs(distance) > 1) View.INVISIBLE else View.VISIBLE
+                if (animate) {
+                    card.animate().translationX(targetX).scaleX(targetScale).scaleY(targetScale)
+                        .alpha(targetAlpha).setDuration(260).setInterpolator(interpolator).start()
+                } else {
+                    card.translationX = targetX
+                    card.scaleX = targetScale
+                    card.scaleY = targetScale
+                    card.alpha = targetAlpha
+                }
+                card.elevation = dp(if (distance == 0) 18 else 8).toFloat()
             }
         }
-        header.addView(add)
-        root.addView(header)
 
-        val hint = TextView(this).apply {
-            text = "Swipe down to open  •  Swipe up to close permanently"
-            textSize = 12f
-            setTextColor(Color.rgb(155, 166, 185))
-            setPadding(0, 0, 0, dp(14))
+        fun finishAndOpen(index: Int) {
+            if (index !in tabs.indices) return
+            selected = index
+            val chosen = cardViews.getOrNull(index)
+            chosen?.animate()?.translationY(dp(90).toFloat())?.scaleX(0.94f)?.scaleY(0.94f)
+                ?.setDuration(190)?.setInterpolator(interpolator)?.start()
+            overlay.animate().alpha(0f).setDuration(190).setInterpolator(interpolator)
+                .withEndAction {
+                    activeTab = index
+                    showActiveTab()
+                    browserContainer.removeView(overlay)
+                    previewBitmaps.forEach { if (!it.isRecycled) it.recycle() }
+                }.start()
         }
-        root.addView(hint)
 
-        val scroll = ScrollView(this)
-        val stack = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        fun closeSelected() {
+            if (selected !in tabs.indices) return
+            val closingIndex = selected
+            val closingCard = cardViews.getOrNull(closingIndex)
+            closingCard?.animate()?.translationY(-screenHeight.toFloat())?.scaleX(0.82f)?.scaleY(0.82f)
+                ?.alpha(0f)?.setDuration(230)?.setInterpolator(interpolator)?.withEndAction {
+                    removeTabPermanently(closingIndex)
+                    previewBitmaps.forEach { if (!it.isRecycled) it.recycle() }
+                    if (tabs.isEmpty()) {
+                        browserContainer.removeView(overlay)
+                        createTab("https://www.google.com")
+                    } else {
+                        // Recreate the visual stack from the surviving live WebViews.
+                        browserContainer.removeView(overlay)
+                        showTabList()
+                    }
+                }?.start()
         }
-        scroll.addView(stack)
-        root.addView(scroll, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+
+        previewBitmaps.forEachIndexed { index, bitmap ->
+            val card = FrameLayout(this).apply {
+                background = GradientDrawable().apply {
+                    setColor(Color.rgb(14, 18, 27))
+                    cornerRadius = dp(24).toFloat()
+                }
+                clipToOutline = true
+                elevation = dp(10).toFloat()
+                alpha = 0f
+            }
+            val image = ImageView(this).apply {
+                setImageBitmap(bitmap)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setBackgroundColor(Color.rgb(8, 10, 16))
+                contentDescription = null
+            }
+            card.addView(image, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+            val params = FrameLayout.LayoutParams(cardWidth, cardHeight, Gravity.CENTER)
+            overlay.addView(card, params)
+            cardViews.add(card)
+        }
+
+        overlay.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.x
+                    downY = event.y
+                    gestureHandled = false
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    val dx = event.x - downX
+                    val dy = event.y - downY
+                    if (abs(dx) > dp(55) && abs(dx) > abs(dy) * 1.15f) {
+                        selected = (selected + if (dx < 0) 1 else -1).coerceIn(0, tabs.lastIndex)
+                        layoutCards(true)
+                    } else if (dy < -dp(65) && abs(dy) > abs(dx)) {
+                        closeSelected()
+                    } else if (dy > dp(65) && abs(dy) > abs(dx)) {
+                        finishAndOpen(selected)
+                    } else if (abs(dx) < dp(18) && abs(dy) < dp(18)) {
+                        finishAndOpen(selected)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> true
+                else -> true
+            }
+        }
+
+        // Place the overlay above the live page, leaving the current tab visible underneath.
+        browserContainer.addView(overlay, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
         ))
-
-        fun rebuildCards() {
-            stack.removeAllViews()
-            tabs.forEachIndexed { index, webView ->
-                val card = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(dp(18), dp(16), dp(18), dp(16))
-                    setBackgroundColor(if (index == activeTab) Color.rgb(35, 52, 78) else Color.rgb(23, 32, 48))
-                    elevation = dp(3).toFloat()
-                }
-                val top = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                }
-                val title = TextView(this).apply {
-                    val pageTitle = webView.title?.takeIf { it.isNotBlank() } ?: "New tab"
-                    text = (if (index == activeTab) "●  " else "") + pageTitle
-                    textSize = 17f
-                    maxLines = 2
-                    setTextColor(Color.WHITE)
-                    typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-                }
-                top.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                val close = TextView(this).apply {
-                    text = "×"
-                    textSize = 28f
-                    setTextColor(Color.rgb(255, 105, 115))
-                    gravity = Gravity.CENTER
-                    setPadding(dp(12), 0, dp(4), 0)
-                    setOnClickListener {
-                        removeTabPermanently(index)
-                        if (tabs.isEmpty()) {
-                            dialog.dismiss()
-                            createTab("https://www.google.com")
-                        } else rebuildCards()
-                    }
-                }
-                top.addView(close)
-                card.addView(top)
-
-                val pageUrl = TextView(this).apply {
-                    text = webView.url ?: "No address"
-                    textSize = 12f
-                    maxLines = 2
-                    setTextColor(Color.rgb(170, 185, 205))
-                    setPadding(0, dp(8), 0, 0)
-                }
-                card.addView(pageUrl)
-                val gestureHint = TextView(this).apply {
-                    text = "↑ close tab     ↓ open tab"
-                    textSize = 11f
-                    setTextColor(Color.rgb(120, 205, 255))
-                    setPadding(0, dp(12), 0, 0)
-                }
-                card.addView(gestureHint)
-
-                var downY = 0f
-                card.setOnTouchListener { _, event ->
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> {
-                            downY = event.rawY
-                            true
-                        }
-                        MotionEvent.ACTION_UP -> {
-                            val delta = event.rawY - downY
-                            if (delta < -dp(55)) {
-                                removeTabPermanently(index)
-                                if (tabs.isEmpty()) {
-                                    dialog.dismiss()
-                                    createTab("https://www.google.com")
-                                } else rebuildCards()
-                            } else if (delta > dp(55)) {
-                                activeTab = tabs.indexOf(webView).coerceAtLeast(0)
-                                showActiveTab()
-                                dialog.dismiss()
-                            } else {
-                                activeTab = tabs.indexOf(webView).coerceAtLeast(0)
-                                showActiveTab()
-                                dialog.dismiss()
-                            }
-                            true
-                        }
-                        MotionEvent.ACTION_CANCEL -> true
-                        else -> true
-                    }
-                }
-
-                val cardParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(142)
-                )
-                cardParams.bottomMargin = dp(14)
-                stack.addView(card, cardParams)
-            }
-        }
-        rebuildCards()
-
-        val footer = TextView(this).apply {
-            text = "Tap a card to open  •  × to close"
-            textSize = 12f
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(155, 166, 185))
-            setPadding(0, dp(12), 0, 0)
-        }
-        root.addView(footer)
-
-        dialog.setContentView(root)
-        dialog.window?.apply {
-            setBackgroundDrawableResource(android.R.color.transparent)
-            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        }
-        dialog.show()
-        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        layoutCards(false)
+        overlay.animate().alpha(1f).setDuration(220).setInterpolator(interpolator).start()
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
