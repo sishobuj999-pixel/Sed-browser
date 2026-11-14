@@ -27,6 +27,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.drawable.GradientDrawable
 import android.view.animation.DecelerateInterpolator
@@ -87,7 +88,7 @@ class MainActivity : Activity() {
         showSplash()
     }
 
-    private fun createTab(url: String, restoreIndex: Int? = null): WebView {
+    private fun createTab(url: String, restoreIndex: Int? = null, activate: Boolean = true): WebView {
         if (tabs.size >= 8) {
             browserContainer.removeView(tabs.first())
             tabs.first().destroy()
@@ -96,7 +97,7 @@ class MainActivity : Activity() {
         }
 
         val webView = WebView(this).apply {
-            setBackgroundColor(Color.TRANSPARENT)
+            setBackgroundColor(Color.WHITE)
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
@@ -125,7 +126,10 @@ class MainActivity : Activity() {
                 }
 
                 override fun onPageFinished(view: WebView?, pageUrl: String?) {
-                    if (view != null) applyTextStatus(view)
+                    if (view != null) {
+                        applyTextStatus(view)
+                        view.postDelayed({ captureTabPreview(view) }, 220)
+                    }
                     if (this@MainActivity.tabs.getOrNull(activeTab) === view &&
                         pageUrl != null && !addressBar.hasFocus()
                     ) addressBar.setText(pageUrl)
@@ -149,9 +153,9 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
-        activeTab = tabs.lastIndex
+        if (activate) activeTab = tabs.lastIndex
+        webView.visibility = if (tabs.lastIndex == activeTab) View.VISIBLE else View.GONE
         attachGestures(webView)
-        showActiveTab()
 
         val restored = restoreWebViewState(webView, restoreIndex)
         if (!restored) {
@@ -172,7 +176,7 @@ class MainActivity : Activity() {
         for (index in 0 until count) {
             val url = sessionPrefs.getString("tab_url_$index", "https://www.google.com")
                 ?: "https://www.google.com"
-            createTab(url, index)
+            createTab(url, index, activate = false)
         }
 
         activeTab = sessionPrefs.getInt("active_tab", 0).coerceIn(0, tabs.lastIndex)
@@ -237,8 +241,41 @@ class MainActivity : Activity() {
             }
         }
 
+        tabs.getOrNull(activeTab)?.let { captureTabPreview(it) }
         editor.apply()
         CookieManager.getInstance().flush()
+    }
+
+    private fun previewFile(index: Int): File = File(filesDir, "sed_tab_preview_$index.png")
+
+    private fun captureTabPreview(webView: WebView) {
+        val index = tabs.indexOf(webView)
+        if (index < 0 || webView.width <= 0 || webView.height <= 0) return
+        try {
+            val bitmap = Bitmap.createBitmap(webView.width, webView.height, Bitmap.Config.ARGB_8888)
+            webView.draw(Canvas(bitmap))
+            previewFile(index).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 92, it) }
+            bitmap.recycle()
+        } catch (_: Exception) {
+            // Keep the last valid preview if capture is temporarily unavailable.
+        }
+    }
+
+    private fun loadTabPreview(webView: WebView, index: Int): Bitmap? {
+        val file = previewFile(index)
+        if (file.exists()) {
+            try {
+                BitmapFactory.decodeFile(file.absolutePath)?.let { return it }
+            } catch (_: Exception) { }
+        }
+        if (webView.width > 0 && webView.height > 0) {
+            return try {
+                Bitmap.createBitmap(webView.width, webView.height, Bitmap.Config.ARGB_8888).also {
+                    webView.draw(Canvas(it))
+                }
+            } catch (_: Exception) { null }
+        }
+        return null
     }
 
     private fun hasValidatedInternet(): Boolean {
@@ -376,21 +413,14 @@ class MainActivity : Activity() {
         val screenWidth = resources.displayMetrics.widthPixels
         val screenHeight = resources.displayMetrics.heightPixels
         val cardWidth = (screenWidth * 0.84f).toInt()
-        val cardHeight = (screenHeight * 0.72f).toInt()
+        val cardHeight = (cardWidth.toFloat() * screenHeight / screenWidth).toInt()
         val spacing = cardWidth * 0.76f
         val interpolator = DecelerateInterpolator(1.7f)
 
-        tabs.forEach { webView ->
-            val bitmap = try {
-                val w = webView.width.coerceAtLeast(1)
-                val h = webView.height.coerceAtLeast(1)
-                Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
-                    webView.draw(Canvas(it))
-                }
-            } catch (_: Exception) {
-                Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).also {
-                    it.eraseColor(Color.rgb(12, 16, 24))
-                }
+        tabs.forEachIndexed { index, webView ->
+            if (index == activeTab) captureTabPreview(webView)
+            val bitmap = loadTabPreview(webView, index) ?: Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).also {
+                it.eraseColor(Color.WHITE)
             }
             previewBitmaps.add(bitmap)
         }
@@ -461,8 +491,8 @@ class MainActivity : Activity() {
             }
             val image = ImageView(this).apply {
                 setImageBitmap(bitmap)
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setBackgroundColor(Color.rgb(8, 10, 16))
+                scaleType = ImageView.ScaleType.FIT_XY
+                setBackgroundColor(Color.WHITE)
                 contentDescription = null
             }
             card.addView(image, FrameLayout.LayoutParams(
@@ -528,6 +558,16 @@ class MainActivity : Activity() {
                 index == activeTab -> index.coerceAtMost(tabs.lastIndex)
                 else -> activeTab
             }.coerceIn(0, tabs.lastIndex)
+        }
+
+        // Preserve previews for surviving tabs while compacting their indices.
+        val survivingPreviews = (0 until tabs.size).map { i ->
+            try { previewFile(if (i < index) i else i + 1).takeIf { it.exists() }?.readBytes() }
+            catch (_: Exception) { null }
+        }
+        for (i in 0..8) previewFile(i).delete()
+        survivingPreviews.forEachIndexed { i, bytes ->
+            if (bytes != null) try { previewFile(i).writeBytes(bytes) } catch (_: Exception) { }
         }
 
         // Rebuild indexed state files so a closed tab cannot return after app restart.
@@ -599,7 +639,7 @@ class MainActivity : Activity() {
             )
         )
         splash.animate().scaleX(1.28f).scaleY(1.28f).alpha(0f)
-            .setDuration(1250).withEndAction {
+            .setDuration(420).withEndAction {
                 (splash.parent as? ViewGroup)?.removeView(splash)
             }.start()
     }
